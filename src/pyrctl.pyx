@@ -26,6 +26,10 @@ class InvalidJailId(Exception):
 ### Cython Imports
 ###
 
+cdef extern from "jail.h":
+  int   jail_getid(char *name)
+  char *jail_getname(int jid)
+
 cdef extern from "sys/rctl.h":
   # These are syscalls, and will fail if you are not root.
   int	rctl_get_racct(char *ib, size_t ibl, char *ob, size_t obl)
@@ -94,13 +98,8 @@ class RctlBackend:
       if not buf: break
       if re.match('^[a-zA-Z0-9]*:.*$', buf):
         retv['logins'].append(buf.strip().split(':')[0])
-    
-    # Read in list of Jails, (jname, jid)
-    # TODO: This whole damn thing.
-    
+        
     # And now lets build our map
-
-    
     # First lets parse up our users
     for user in passwd:
       tmp = {
@@ -126,9 +125,7 @@ class RctlBackend:
             if usr['uname'] == tmp['members'][un]:
               tmp['members'][un] = usr
       retv['groups'].append(tmp)
-    
-    # TODO: parse the login class difinitions and put them into a
-    #       reasonable mapping structure.
+
     return retv
 
   def __refreshUserMap(self):
@@ -146,7 +143,11 @@ class RctlBackend:
         if not str(rule_s[1]).isdigit():
           raise InvalidUserName
       elif rule_s[0] == 'jail':
-        pass # TODO: JAIL support in it's entirety.
+        r = jail_getid(rule_s[1])
+        if r != -1:
+          rule_s[1] = str(r)
+        else:
+          raise InvalidJailId
       elif rule_s[0] == 'loginclass':
         if not self.__UserMap['logins'].__contains__(rule_s[1]):
           raise InvalidLoginClass
@@ -165,7 +166,10 @@ class RctlBackend:
         if not rule_s[1].isalnum():
           raise InvalidUserName
       elif rule_s[0] == 'jail' and rule_s[1].isdigit():
-        pass
+        s = jail_getname(int(rule_s[1]))
+        if s:
+          rule_s[1] = s
+        else: raise InvalidJailName
       elif rule_s[0] == 'loginclass':
         if not self.__UserMap['logins'].__contains__(rule_s[1]):
           raise InvalidLoginClass
